@@ -1,5 +1,4 @@
-// api/telegram.js
-module.exports = async function handler(req, res) {
+export default async function handler(req, res) {
   try {
     if (req.method !== "POST") {
       return res.status(405).json({ success: false, error: "Method not allowed" });
@@ -15,16 +14,19 @@ module.exports = async function handler(req, res) {
       });
     }
 
-    const body = req.body || {};
-    const message = typeof body.message === "string" ? body.message.trim() : "";
+    // Vercel usually gives req.body as an object, but handle string just in case
+    let body = req.body;
+    if (typeof body === "string") {
+      try { body = JSON.parse(body); } catch { body = {}; }
+    }
+    body = body || {};
 
+    const message = typeof body.message === "string" ? body.message.trim() : "";
     if (!message) {
       return res.status(400).json({ success: false, error: "Missing message" });
     }
 
-    // Telegram text limit is 4096 chars. Keep a safety margin.
-    const MAX = 3800;
-    const chunks = splitIntoChunks(message, MAX);
+    const chunks = splitIntoChunks(message, 3800);
 
     for (const text of chunks) {
       const tgRes = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
@@ -51,10 +53,10 @@ module.exports = async function handler(req, res) {
   } catch (err) {
     return res.status(500).json({
       success: false,
-      error: err && err.message ? err.message : "Server error"
+      error: err?.message || "Server error"
     });
   }
-};
+}
 
 function splitIntoChunks(text, maxLen) {
   if (text.length <= maxLen) return [text];
@@ -64,7 +66,6 @@ function splitIntoChunks(text, maxLen) {
   let current = "";
 
   for (const line of lines) {
-    // If a single line is too long, hard-split it
     if (line.length > maxLen) {
       if (current) {
         chunks.push(current);
@@ -76,8 +77,7 @@ function splitIntoChunks(text, maxLen) {
       continue;
     }
 
-    // Add line to current chunk
-    const candidate = current ? current + "\n" + line : line;
+    const candidate = current ? `${current}\n${line}` : line;
     if (candidate.length > maxLen) {
       chunks.push(current);
       current = line;
